@@ -1,5 +1,6 @@
 const connection = require('../db-config');
 const Joi = require('joi');
+const argon2 = require('argon2');
 
 const db = connection.promise();
 
@@ -11,11 +12,12 @@ const validate = (data, forCreation = true) => {
     lastname: Joi.string().max(255).presence(presence),
     city: Joi.string().allow(null, '').max(255),
     language: Joi.string().allow(null, '').max(255),
+    password: Joi.string().min(9).presence(presence),
   }).validate(data, { abortEarly: false }).error;
 };
 
 const findMany = ({ filters: { language } }) => {
-  let sql = 'SELECT * FROM users';
+  let sql = 'SELECT firstname, lastname, email, city, language FROM users';
   const sqlValues = [];
   if (language) {
     sql += ' WHERE language = ?';
@@ -27,27 +29,43 @@ const findMany = ({ filters: { language } }) => {
 
 const findOne = (id) => {
   return db
-    .query('SELECT * FROM users WHERE id = ?', [id])
+    .query('SELECT firstname, lastname, email, city, language FROM users WHERE id = ?', [id])
     .then(([results]) => results[0]);
 };
 
 const findByEmail = (email) => {
   return db
-    .query('SELECT * FROM users WHERE email = ?', [email])
+    .query('SELECT firstname, lastname, email, city, language FROM users WHERE email = ?', [email])
     .then(([results]) => results[0]);
 };
 
 const findByEmailWithDifferentId = (email, id) => {
   return db
-    .query('SELECT * FROM users WHERE email = ? AND id <> ?', [email, id])
+    .query('SELECT firstname, lastname, email, city, language FROM users WHERE email = ? AND id <> ?', [email, id])
+    .then(([results]) => results[0]);
+};
+
+const findCredentials = (email) => {
+  return db
+    .query('SELECT email, hashedPassword FROM users WHERE email = ?', [email])
     .then(([results]) => results[0]);
 };
 
 const create = (data) => {
-  return db.query('INSERT INTO users SET ?', data).then(([result]) => {
-    const id = result.insertId;
-    return { ...data, id };
-  });
+  const { firstname, lastname, email, city, language, password } = data;
+  return hashPassword(password)
+    .then((hashedPassword) => db.query('INSERT INTO users SET ?', {
+      firstname,
+      lastname,
+      email,
+      city,
+      language,
+      hashedPassword,
+    }))
+    .then(([result]) => {
+      const id = result.insertId;
+      return { id, firstname, lastname, email, city, language };
+    });
 };
 
 const update = (id, newAttributes) => {
@@ -60,6 +78,34 @@ const destroy = (id) => {
     .then(([result]) => result.affectedRows !== 0);
 };
 
+/**
+ * Hashing configuration
+ */
+ const hashingOptions = {
+  type: argon2.argon2id,
+  memoryCost: 2 ** 16,
+  timeCost: 5,
+  parallelism: 1
+};
+
+/**
+ * Hash a given password
+ * @param plainPassword
+ */
+const hashPassword = (plainPassword) => {
+  return argon2.hash(plainPassword, hashingOptions);
+};
+
+/**
+ * Verify a given password against a hash
+ * @param {*} plainPassword 
+ * @param {*} hashedPassword 
+ * @returns 
+ */
+const verifyPassword = (plainPassword, hashedPassword) => {
+  return argon2.verify(hashedPassword, plainPassword, hashingOptions);
+};
+
 module.exports = {
   findMany,
   findOne,
@@ -69,4 +115,7 @@ module.exports = {
   destroy,
   findByEmail,
   findByEmailWithDifferentId,
+  findCredentials,
+  hashPassword,
+  verifyPassword,
 };
