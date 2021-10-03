@@ -1,5 +1,6 @@
 const authRouter = require('express').Router();
 const User = require('../models/user');
+const { generateToken } = require('../tools/authToken'); 
 
 const WRONG_CREDENTIALS = 'Wrong credentials';
 
@@ -27,11 +28,9 @@ const checkCredentials = (req, res, next) => {
       });
 };
 
-authRouter.post('/checkCredentials', checkCredentials, (req, res) => {
+authRouter.post('/login', checkCredentials, (req, res) => {
     const { email } = req.body;
-    User.findByEmail(email)
-      .then((user) => res.status(200).json(user))
-      .catch(() => res.status(500).json({ message: `Error: ${err.message}`}))
+    res.status(200).json({ token: generateToken(email) });
 });
 
 module.exports = authRouter;
